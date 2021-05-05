@@ -1,0 +1,4 @@
+# base36 extension
+comment = 'set of extended json functions'
+default_version = '0.1'
+relocatable = true
