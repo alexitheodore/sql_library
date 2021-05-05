@@ -1,4 +1,4 @@
-CREATE OR REPLACE PROCEDURE global.manage_relation_elements(
+CREATE OR REPLACE PROCEDURE manage_relation_elements(
 	IN mode TEXT
 ,	IN elements TEXT[]
 ,	IN schema_table_list TEXT[] DEFAULT NULL

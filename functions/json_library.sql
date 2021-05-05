@@ -78,6 +78,7 @@ $$
 
 LANGUAGE PLPGSQL
 IMMUTABLE
+PARALLEL SAFE
 ;
 COMMENT ON FUNCTION jsonb_array_append(JSONB, JSONB) IS 'Inteligently appends the second argument to the first depending on what datatype the second is.';
 
@@ -95,6 +96,7 @@ END;
 $$
 LANGUAGE PLPGSQL
 IMMUTABLE
+PARALLEL SAFE
 ;
 
 
@@ -129,6 +131,7 @@ END;
 $$
 LANGUAGE PLPGSQL
 IMMUTABLE
+PARALLEL SAFE
 ;
 
 DROP AGGREGATE IF EXISTS json_agg_array (JSONB);
@@ -162,6 +165,7 @@ $$
 
 LANGUAGE PLPGSQL
 IMMUTABLE
+PARALLEL SAFE
 ;
 COMMENT ON FUNCTION json_setrsert(JSONB, TEXT[], ANYELEMENT, BOOLEAN) IS 'Inserts a value into the array of the first argument at the destination designated by the second argument. It creates the array if it does not exist already. This is a combination of the native functions jsonb_set and jsonb_insert';
 
@@ -341,6 +345,7 @@ $$
 
 LANGUAGE PLPGSQL
 IMMUTABLE
+PARALLEL SAFE
 ;
 COMMENT ON FUNCTION jsonb_keys_coexist(JSONB, TEXT[]) IS 'This is a shorthand operator that Returns TRUE if *more than one* of the specified keys in the second argument exists at the top level of the first argument.';
 
@@ -377,6 +382,7 @@ END;
 $$
 LANGUAGE PLPGSQL
 IMMUTABLE
+PARALLEL SAFE
 ;
 COMMENT ON FUNCTION jsonb_delta(JSONB, JSONB) IS 'Computes a diff between the first and second JSONB arguments.';
 
@@ -416,6 +422,7 @@ END;
 $$
 LANGUAGE PLPGSQL
 IMMUTABLE
+PARALLEL SAFE
 ;
 COMMENT ON FUNCTION jsonb_each_casted(JSONB) IS 'System function used for casting.';
 
@@ -446,20 +453,41 @@ END
 $$
 LANGUAGE PLPGSQL
 IMMUTABLE
+PARALLEL SAFE
 ;
 COMMENT ON FUNCTION jsonb_each_casted(JSONB) IS 'Raises an error whenever the specified keys are not provided in the input json';
-
-
-
 
 
 /*
 */
 
-\if :has_privs
+
+CREATE OR REPLACE FUNCTION jsonb_strip_blanks(
+	IN json_in JSONB
+,	OUT json_out JSONB
+) AS
+$$
+BEGIN
+
+json_out := replace(json_in::text, '""', 'null');
+
+json_out := jsonb_strip_nulls(json_out);
+
+json_out := regexp_replace(json_out::text, '(,?)(\s*)({})(,?)(\s*)', '', 'g');
+
+END;
+$$
+LANGUAGE PLPGSQL
+IMMUTABLE
+PARALLEL SAFE
+;
+COMMENT ON FUNCTION jsonb_strip_blanks(JSONB) IS 'Removes all keys that have blank or null values.';
+
+
 
 
 --> Bookmark  ___CASTS___
+\if :has_privs
 /*
 
 	CASTS:
@@ -471,7 +499,8 @@ $$
 SELECT (json_in#>>'{}')::TEXT;
 $$
 LANGUAGE sql
-IMMUTABLE;
+IMMUTABLE
+PARALLEL SAFE;
 COMMENT ON FUNCTION "text"(JSONB) IS 'System function used for casting';
 DROP CAST IF EXISTS (JSONB AS TEXT);
 CREATE CAST (JSONB AS TEXT) WITH FUNCTION "text"(JSONB) AS ASSIGNMENT;
@@ -482,7 +511,8 @@ $$
 SELECT ARRAY(SELECT jsonb_array_elements_text(json_array));
 $$
 LANGUAGE sql
-IMMUTABLE;
+IMMUTABLE
+PARALLEL SAFE;
 COMMENT ON FUNCTION text_array(JSONB) IS 'System function used for casting';
 DROP CAST IF EXISTS (JSONB AS text[]);
 CREATE CAST (JSONB AS text[]) WITH FUNCTION text_array(JSONB) AS ASSIGNMENT;
@@ -496,7 +526,8 @@ $$
 SELECT (json_in#>>'{}')::INT;
 $$
 LANGUAGE sql
-IMMUTABLE;
+IMMUTABLE
+PARALLEL SAFE;
 COMMENT ON FUNCTION "int"(JSONB) IS 'System function used for casting';
 DROP CAST IF EXISTS (JSONB AS int);
 CREATE CAST (JSONB AS int) WITH FUNCTION "int"(JSONB) AS ASSIGNMENT;
@@ -509,7 +540,8 @@ $$
 SELECT ARRAY(SELECT jsonb_array_elements_text(json_array)::int);
 $$
 LANGUAGE sql
-IMMUTABLE;
+IMMUTABLE
+PARALLEL SAFE;
 COMMENT ON FUNCTION int_array(JSONB) IS 'System function used for casting';
 DROP CAST IF EXISTS (JSONB AS int[]);
 CREATE CAST (JSONB AS int[]) WITH FUNCTION int_array(JSONB) AS ASSIGNMENT;
@@ -522,7 +554,8 @@ $$
 SELECT (json_in#>>'{}')::NUMERIC;
 $$
 LANGUAGE sql
-IMMUTABLE;
+IMMUTABLE
+PARALLEL SAFE;
 COMMENT ON FUNCTION "numeric"(JSONB) IS 'System function used for casting';
 DROP CAST IF EXISTS (JSONB AS NUMERIC);
 CREATE CAST (JSONB AS NUMERIC) WITH FUNCTION "numeric"(JSONB) AS ASSIGNMENT;
@@ -566,6 +599,7 @@ END;
 $$
 LANGUAGE PLPGSQL
 IMMUTABLE
+PARALLEL SAFE
 ;
 
 COMMENT ON FUNCTION json_select_keys_if_exist(JSONB, TEXT[]) IS 'Returns the object for the given key name(s) text array from the given JSONB array. This function is intended to be used by custom operator(s).';
@@ -614,6 +648,7 @@ $$
 
 LANGUAGE PLPGSQL
 IMMUTABLE
+PARALLEL SAFE
 ;
 COMMENT ON FUNCTION json_select_key_if_exists(JSONB, TEXT) IS 'Returns the object for the given key name from the given JSONB array. This function is intended to be used by custom operator(s).';
 
@@ -632,7 +667,7 @@ COMMENT ON OPERATOR # (JSONB, TEXT) IS 'This is a shorthand operator that return
 /*
 */
 
--- This function differs from that of the pgs native || functionality in that if either constitiutent is NULL, then the result is the other constituent. This makes it easy to append without needing to know whether the appended object is NULL or not.
+-- This function differs from that of the pgs native || functionality in that for (this function) if either constitiutent is NULL, then the result is just the other constituent. This makes it easy to append without needing to know whether the appended object is NULL or not.
 
 CREATE OR REPLACE FUNCTION json_append(
     IN  json_a      JSONB
@@ -650,6 +685,7 @@ END;
 $$
 LANGUAGE PLPGSQL
 IMMUTABLE
+PARALLEL SAFE
 ;
 
 
@@ -695,6 +731,7 @@ END;
 $$
 LANGUAGE PLPGSQL
 IMMUTABLE
+PARALLEL SAFE
 ;
 
 
@@ -726,6 +763,7 @@ END;
 $$
 LANGUAGE PLPGSQL
 IMMUTABLE
+PARALLEL SAFE
 ;
 COMMENT ON FUNCTION jsonb_as_numeric(JSONB, TEXT) IS 'Gets value from object cast as NUMERIC. This function is intended to be used by custom operator(s).';
 
@@ -755,6 +793,7 @@ END;
 $$
 LANGUAGE PLPGSQL
 IMMUTABLE
+PARALLEL SAFE
 ;
 COMMENT ON FUNCTION jsonb_as_int(JSONB, TEXT) IS 'This is a shorthand operator that gets value from object cast as INT. This function is intended to be used by custom operator(s).';
 
@@ -793,6 +832,7 @@ END;
 $$
 LANGUAGE PLPGSQL
 IMMUTABLE
+PARALLEL SAFE
 ;
 COMMENT ON FUNCTION jsonb_key_as_text_array(JSONB, TEXT) IS 'This is a shorthand operator that gets value from object cast as TEXT[]. This function is intended to be used by custom operator(s).';
 
@@ -830,6 +870,7 @@ END;
 $$
 LANGUAGE PLPGSQL
 IMMUTABLE
+PARALLEL SAFE
 ;
 COMMENT ON FUNCTION jsonb_array_as_text_array(JSONB) IS 'This is a shorthand operator that gets value from object cast as TEXT[]. This function is intended to be used by custom operator(s).';
 
@@ -859,6 +900,7 @@ END;
 $$
 LANGUAGE PLPGSQL
 IMMUTABLE
+PARALLEL SAFE
 ;
 COMMENT ON FUNCTION jsonb_as_boolean(JSONB, TEXT) IS 'This is a shorthand operator that gets value from object cast as BOOLEAN. This function is intended to be used by custom operator(s).';
 
@@ -889,6 +931,7 @@ END;
 $$
 LANGUAGE PLPGSQL
 IMMUTABLE
+PARALLEL SAFE
 ;
 COMMENT ON FUNCTION jsonb_as_date(JSONB, TEXT) IS 'This is a shorthand operator that gets value from object cast as DATE. This function is intended to be used by custom operator(s).';
 
@@ -919,6 +962,7 @@ END;
 $$
 LANGUAGE PLPGSQL
 IMMUTABLE
+PARALLEL SAFE
 ;
 COMMENT ON FUNCTION jsonb_build(TEXT, ANYELEMENT) IS 'Builds JSONB from TEXT and ANYELEMENT. This function is intended to be used by custom operator(s).';
 
@@ -948,6 +992,7 @@ END;
 $$
 LANGUAGE PLPGSQL
 IMMUTABLE
+PARALLEL SAFE
 ;
 COMMENT ON FUNCTION jsonb_build(TEXT, TEXT) IS 'Builds JSONB from TEXT and TEXT. This function is intended to be used by custom operator(s).';
 
@@ -978,6 +1023,7 @@ END;
 $$
 LANGUAGE PLPGSQL
 IMMUTABLE
+PARALLEL SAFE
 ;
 COMMENT ON FUNCTION jsonb_build(TEXT, JSONB) IS 'Builds JSONB from TEXT and JSONB. This function is intended to be used by custom operator(s).';
 
@@ -1005,7 +1051,8 @@ SELECT ARRAY(SELECT jsonb_array_elements_text(json_in->int_in)::int);
 
 $$
 LANGUAGE sql
-IMMUTABLE;
+IMMUTABLE
+PARALLEL SAFE;
 
 COMMENT ON FUNCTION int_array(JSONB, TEXT) IS 'Gets value from object cast as INT[]. This function is intended to be used by custom operator(s).';
 
@@ -1058,6 +1105,7 @@ $$
 
 LANGUAGE PLPGSQL
 IMMUTABLE
+PARALLEL SAFE
 ;
 
 COMMENT ON FUNCTION jsonb_accepted_keys(JSONB, TEXT[]) IS 'Returns false if any of the keys provided in the first JSON argument are not in the second TEXT[] argument (in otherwords: unaccepted).';
@@ -1085,6 +1133,7 @@ END;
 $$
 LANGUAGE PLPGSQL
 IMMUTABLE
+PARALLEL SAFE
 ;
 COMMENT ON FUNCTION cast_to_jsonb(TEXT) IS 'System function used for casting';
 
@@ -1095,3 +1144,60 @@ CREATE OPERATOR @ (
 )
 ;
 COMMENT ON OPERATOR @ (NONE, TEXT) IS 'This is a shorthand operator that casts the right text into JSONB.';
+
+
+
+/*
+*/
+
+\if :has_privs
+
+CREATE OR REPLACE VIEW json_operators AS
+
+WITH
+    ops AS
+(
+SELECT
+    *
+FROM pg_operator
+)
+,   pgta AS
+(
+SELECT
+    oid AS oprresult
+,   typname
+FROM pg_type
+)
+,   pgtr AS
+(
+SELECT
+    oid AS oprright
+,   typname AS right_type
+FROM pg_type
+)
+,   pgtl AS
+(
+SELECT
+    oid AS oprleft
+,   typname AS left_type
+FROM pg_type
+)
+
+SELECT
+    oprname AS OPERATOR
+,   left_type
+,   right_type
+,   typname AS return_type
+,   COALESCE('('||left_type||')','') ||' '|| oprname ||' '|| COALESCE('('||right_type||')','') ||' '|| '-->' ||' '|| typname AS formula
+,   obj_description(ops.oid) AS description
+,   oprcode AS operator_function
+FROM ops
+LEFT JOIN pgtr USING (oprright)
+LEFT JOIN pgtl USING (oprleft)
+JOIN pgta USING (oprresult)
+WHERE
+    ARRAY[left_type, right_type]::TEXT[] && ARRAY['json', 'jsonb']
+ORDER BY left_type, right_type, return_type
+;
+
+\endif
