@@ -10,6 +10,7 @@ DECLARE
 	each_element RECORD;
 	error_detail TEXT;
 	tables_to_analyze TEXT[];
+	exec_time TIMESTAMPTZ;
 BEGIN
 
 /*
@@ -180,7 +181,13 @@ WHEN 'enable' THEN
 			END IF;
 
 			BEGIN
+				exec_time := clock_timestamp();
+
 				EXECUTE format('ALTER TABLE %1$s ADD %2$s;', each_element.table_name, each_element.create_def);
+
+				IF 'verbose' = any(flags) THEN
+					RAISE INFO 'Time: %s', date_diff(exec_time, clock_timestamp(), 'second');
+				END IF;
 
 				UPDATE relation_element_logs SET
 					enabled_date = now()
@@ -214,7 +221,13 @@ WHEN 'enable' THEN
 			END IF;
 
 			BEGIN
+				exec_time := clock_timestamp();
+
 				EXECUTE each_element.create_def;
+
+				IF 'verbose' = any(flags) THEN
+					RAISE INFO 'Time: %s', date_diff(exec_time, clock_timestamp(), 'second');
+				END IF;
 
 				UPDATE relation_element_logs SET
 					enabled_date = now()
