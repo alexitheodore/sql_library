@@ -1,3 +1,5 @@
+\include_relative ../functions/date_diff.sql
+
 CREATE OR REPLACE PROCEDURE manage_relation_elements(
 	IN mode TEXT
 ,	IN elements TEXT[]
@@ -16,9 +18,20 @@ BEGIN
 /*
 USAGE:
 
-For schema_table_list, each element must use the syntax "schema.table"; however, wildcards are allowed using the "%" character. For example, "%.table_a" denotes table_a in any schema, or "schema_b.%" denotes all tables in schema_b.
+For `schema_table_list`, each element must use the syntax "schema.table";
+however, wildcards are allowed using the "%" character.
+For example, "%.table_a" denotes table_a in any schema,
+or "schema_b.%" denotes all tables in schema_b.
+
+For `element_names_in`, simply supply the list of element_names (constraint name or index name as seen in `relation_element_logs` table).
 
 */
+
+IF	coalesce(schema_table_list, element_names_in) IS NULL
+	OR	(schema_table_list IS NOT NULL AND element_names_in IS NOT NULL)
+	THEN
+		RAISE EXCEPTION 'Must provide either `schema_table_list` or `schema_table_list` but not both.';
+END IF;
 
 
 /*
@@ -74,6 +87,7 @@ WHEN 'disable' THEN
 			JOIN pg_class cls ON cls.oid = conrelid
 			WHERE
 				(cls.relnamespace::regnamespace::text)||'.'||(relname) LIKE ANY(schema_table_list) -- schema.table
+			OR conname = any(element_names_in)
 			ORDER BY drop_order DESC NULLS LAST
 		LOOP
 
@@ -124,9 +138,13 @@ WHEN 'disable' THEN
 			JOIN pg_class pgc1 ON indrelid = pgc1.oid
 			JOIN pg_class pgc2 ON indexrelid = pgc2.oid
 			WHERE
-				NOT GREATEST(indisunique, indisprimary, indisexclusion) -- not linked to a constraint
-			AND indislive
-			AND (pgc2.relnamespace::regnamespace::text)||'.'||(pgc1.relname) LIKE ANY(schema_table_list) -- schema.table
+				TRUE
+			AND	(
+					NOT GREATEST(indisunique, indisprimary, indisexclusion) -- not linked to a constraint
+				AND indislive
+				AND (pgc2.relnamespace::regnamespace::text)||'.'||(pgc1.relname) LIKE ANY(schema_table_list) -- schema.table
+				)
+			OR pgc2.relname = any(element_names_in)
 		LOOP
 			IF 'verbose' = any(flags) THEN
 				RAISE INFO 'Disabling Index: %.%', each_element.table_name, each_element.index_name;
