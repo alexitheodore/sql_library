@@ -38,3 +38,43 @@ LANGUAGE sql
 ;
 
 CREATE TABLE test (a text PRIMARY KEY);
+
+
+/*
+Another example that prevents a schema from being dropped:
+*/
+
+
+ROLLBACK; BEGIN;
+
+CREATE SCHEMA testst;
+
+CREATE OR REPLACE FUNCTION protect_prod_source_data() RETURNS event_trigger AS
+$$
+DECLARE
+    obj record;
+BEGIN
+FOR obj IN SELECT * FROM pg_event_trigger_dropped_objects()
+LOOP
+
+	IF obj.object_type = 'schema' and obj.object_name = 'testst' THEN
+		RAISE EXCEPTION 'Stop! Are you sure you want to do this? Disable this block with "ALTER EVENT TRIGGER lock_schema DISABLE;" to break everything.';
+	END IF;
+
+END LOOP;
+END
+$$
+LANGUAGE plpgsql
+;
+
+
+DROP EVENT TRIGGER IF EXISTS lock_schema;
+CREATE EVENT TRIGGER lock_schema
+   ON sql_drop
+EXECUTE FUNCTION protect_prod_source_data();
+
+DROP SCHEMA testst;
+
+ALTER EVENT TRIGGER lock_schema DISABLE;
+
+DROP SCHEMA testst;

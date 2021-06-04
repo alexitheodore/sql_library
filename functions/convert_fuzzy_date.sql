@@ -1,12 +1,23 @@
 /*
 
-Description: This package helps to convert dates in a mixed format from any known language into a standardized format. It isn't magic and needs to be trained a little per the situation at hand. See the convert_fuzzy_date() for usage and for configuration.
+Description: This package helps to convert dates in a mixed format from any known language into a standardized format.
+It isn't magic and needs to be trained a little per the situation at hand.
+See the convert_fuzzy_date() function for usage and for configuration.
+
+Notes:
+- Requires "CREATE EXTENSION IF NOT EXISTS unaccent;"
+
+Revision Log:
+06-04-21
+ - cleaned everything up a bunch (no functionality change)
+ - removed schemas and made the function overall as schema agnostic as possible
+ - changed the table names slightly.
 
 */
 
 
-drop table IF EXISTS temp.months_translations_staging;
-create table temp.months_translations_staging(
+DROP TABLE IF EXISTS month_translations_staging;
+CREATE TEMP TABLE month_translations_staging(
 	mm
 		INT
 		NOT NULL
@@ -19,8 +30,7 @@ create table temp.months_translations_staging(
 )
 ;
 
-truncate temp.months_translations_staging;
-insert into temp.months_translations_staging (language, mm, month) values
+INSERT INTO month_translations_staging (language, mm, month) VALUES
 ($$Afrikaans - South Africa$$,1,$$Januarie$$),($$Afrikaans - South Africa$$,2,$$Februarie$$),($$Afrikaans - South Africa$$,3,$$Maart$$),($$Afrikaans - South Africa$$,4,$$April$$),($$Afrikaans - South Africa$$,5,$$Mei$$),($$Afrikaans - South Africa$$,6,$$Junie$$),($$Afrikaans - South Africa$$,7,$$Julie$$),($$Afrikaans - South Africa$$,8,$$Augustus$$),($$Afrikaans - South Africa$$,9,$$September$$),($$Afrikaans - South Africa$$,10,$$Oktober$$),($$Afrikaans - South Africa$$,11,$$November$$),($$Afrikaans - South Africa$$,12,$$Desember$$),
 ($$Albanian - Albania$$,1,$$janar$$),($$Albanian - Albania$$,2,$$shkurt$$),($$Albanian - Albania$$,3,$$mars$$),($$Albanian - Albania$$,4,$$prill$$),($$Albanian - Albania$$,5,$$maj$$),($$Albanian - Albania$$,6,$$qershor$$),($$Albanian - Albania$$,7,$$korrik$$),($$Albanian - Albania$$,8,$$gusht$$),($$Albanian - Albania$$,9,$$shtator$$),($$Albanian - Albania$$,10,$$tetor$$),($$Albanian - Albania$$,11,$$nëntor$$),($$Albanian - Albania$$,12,$$dhjetor$$),
 ($$Alsatian$$,1,$$Jänner$$),($$Alsatian$$,2,$$Feverje$$),($$Alsatian$$,3,$$März$$),($$Alsatian$$,4,$$Àpril$$),($$Alsatian$$,5,$$Mai$$),($$Alsatian$$,6,$$Jüni$$),($$Alsatian$$,7,$$Jüli$$),($$Alsatian$$,8,$$Augscht$$),($$Alsatian$$,9,$$September$$),($$Alsatian$$,10,$$Oktower$$),($$Alsatian$$,11,$$Nowember$$),($$Alsatian$$,12,$$Dezember$$),
@@ -261,8 +271,8 @@ insert into temp.months_translations_staging (language, mm, month) values
 ($$HID (Human Interface Device)$$,1,$$January$$),($$HID (Human Interface Device)$$,2,$$February$$),($$HID (Human Interface Device)$$,3,$$March$$),($$HID (Human Interface Device)$$,4,$$April$$),($$HID (Human Interface Device)$$,5,$$May$$),($$HID (Human Interface Device)$$,6,$$June$$),($$HID (Human Interface Device)$$,7,$$July$$),($$HID (Human Interface Device)$$,8,$$August$$),($$HID (Human Interface Device)$$,9,$$September$$),($$HID (Human Interface Device)$$,10,$$October$$),($$HID (Human Interface Device)$$,11,$$November$$),($$HID (Human Interface Device)$$,12,$$December$$)
 ;
 
-drop table IF EXISTS temp.months_translations;
-create table temp.months_translations(
+DROP TABLE IF EXISTS month_translations;
+CREATE TABLE month_translations(
 	mm
 		INT
 		NOT NULL
@@ -275,21 +285,19 @@ create table temp.months_translations(
 )
 ;
 
-INSERT INTO temp.months_translations
+INSERT INTO month_translations
 (mm, languages, month)
-select
+SELECT
 
 	mm
 ,	array_agg(language)
-,	global.unaccent(lower(month)) new_month
-from temp.months_translations_staging
+,	unaccent(lower(month)) new_month
+FROM month_translations_staging
 group by new_month, mm
 ;
 
-select * from temp.months_translations;
 
-
-create or replace function temp.convert_fuzzy_date(
+CREATE OR REPLACE FUNCTION convert_fuzzy_date(
 	IN fuzzy_date TEXT
 ,	OUT clean_date DATE
 ) AS
@@ -301,7 +309,7 @@ DECLARE
 BEGIN
 
 -- cleans fuzzy date
-fuzzy_date := global.unaccent(lower(fuzzy_date));
+fuzzy_date := unaccent(lower(fuzzy_date));
 
 -- try to get a year out of it
 clean_year := (regexp_match(fuzzy_date, '\d+'))[1];
@@ -317,7 +325,7 @@ IF fuzzy_date != clean_year THEN
 	-- if that pattern didn't work, then try this pattern:
 	EXCEPTION WHEN invalid_datetime_format THEN
 
-		clean_month := (select mm from temp.months_translations where array[global.unaccent(lower(month))] <@ string_to_array(fuzzy_date, ' ') limit 1);
+		clean_month := (select mm from month_translations where array[unaccent(lower(month))] <@ string_to_array(fuzzy_date, ' ') limit 1);
 		clean_date := to_date((clean_month ||' '|| clean_year), 'MM YYYY');
 -- 		raise info 'state 3, month#: %', clean_month;
 
@@ -345,4 +353,5 @@ END;
 $$
 LANGUAGE plpgsql
 IMMUTABLE
+PARALLEL SAFE
 ;
