@@ -13,6 +13,9 @@ Revision Log:
  - removed schemas and made the function overall as schema agnostic as possible
  - changed the table names slightly.
 
+06-07-21
+ - Made the `convert_fuzzy_date()` actually parallel safe
+
 */
 
 
@@ -302,7 +305,6 @@ CREATE OR REPLACE FUNCTION convert_fuzzy_date(
 ,	OUT clean_date DATE
 ) AS
 $$
-<<poo>>
 DECLARE
 	clean_month TEXT;
 	clean_year TEXT;
@@ -312,42 +314,33 @@ BEGIN
 fuzzy_date := unaccent(lower(fuzzy_date));
 
 -- try to get a year out of it
-clean_year := (regexp_match(fuzzy_date, '\d+'))[1];
+clean_year := (regexp_match(fuzzy_date, '\d{4}'))[1];
 
 -- if the date isn't just a year
 IF fuzzy_date != clean_year THEN
-	BEGIN
 
 	-- try this pattern:
-	clean_date := to_date(fuzzy_date, 'month YYYY');
-	-- 	raise info 'state 2';
+	IF fuzzy_date ~ '((january)|(february)|(march)|(april)|(may)|(june)|(july)|(august)|(september)|(october)|(november)|(december))\s*\d{4}'
+	THEN
+		clean_date := to_date(fuzzy_date, 'month YYYY');
+		-- 	raise info 'state 2';
 
-	-- if that pattern didn't work, then try this pattern:
-	EXCEPTION WHEN invalid_datetime_format THEN
-
+		-- if that pattern didn't work, then try this pattern:
+	ELSE
 		clean_month := (select mm from month_translations where array[unaccent(lower(month))] <@ string_to_array(fuzzy_date, ' ') limit 1);
 		clean_date := to_date((clean_month ||' '|| clean_year), 'MM YYYY');
 -- 		raise info 'state 3, month#: %', clean_month;
 
-	END;
+	END IF;
 
 END IF;
 
 IF fuzzy_date = clean_year OR clean_date IS NULL THEN
 
-	BEGIN
-
 	fuzzy_date := clean_year||'-01-01';
 	clean_date := fuzzy_date::date;
--- 	raise info 'state 1';
 
-	EXCEPTION WHEN others THEN
-
-	clean_date := NULL;
-
-	END;
 END IF;
-
 
 END;
 $$
