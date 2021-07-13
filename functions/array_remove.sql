@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION global.array_remove(
+CREATE OR REPLACE FUNCTION array_remove(
 	IN array_left_in anyarray
 ,	IN array_right_in anyarray
 ,	OUT array_commons anyarray
@@ -18,4 +18,6 @@ WHERE
 END;
 $$
 LANGUAGE plpgsql
+IMMUTABLE
+PARALLEL SAFE
 ;
