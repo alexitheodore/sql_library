@@ -10,7 +10,7 @@ PARALLEL SAFE
 ;
 
 -- And then wrap an aggregate around it
-CREATE AGGREGATE first (
+CREATE OR REPLACE AGGREGATE first (
 	sfunc = first_agg
 ,	basetype = anyelement
 ,	stype = anyelement
