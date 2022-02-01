@@ -1,4 +1,4 @@
-\include_relative ../functions/date_diff.sql
+\include_relative ../../functions/date_diff.sql
 
 CREATE OR REPLACE PROCEDURE manage_relation_elements(
 	IN mode TEXT
@@ -50,7 +50,7 @@ CASE mode
 WHEN 'disable' THEN
 
 	-- the table may actually exist already and more stuff can be added to it.
-	CREATE TABLE IF NOT EXISTS relation_element_logs
+	CREATE TABLE IF NOT EXISTS admin.relation_element_logs
 	(
 		id
 			SERIAL
@@ -72,6 +72,8 @@ WHEN 'disable' THEN
 
 	IF 'constraints' = ANY(elements) THEN
 
+	RAISE INFO 'Disabling Constraints...';
+
 		FOR each_element IN
 			select
 				pg_get_constraintdef(cnt.oid) as con_def
@@ -86,7 +88,10 @@ WHEN 'disable' THEN
 			from pg_constraint cnt
 			JOIN pg_class cls ON cls.oid = conrelid
 			WHERE
-				(cls.relnamespace::regnamespace::text)||'.'||(relname) LIKE ANY(schema_table_list) -- schema.table
+				(
+					(cls.relnamespace::regnamespace::text)||'.'||(relname) LIKE ANY(schema_table_list) -- schema.table
+				AND relname NOT IN ('relation_element_logs') -- obviously need to skip this one...
+				)
 			OR conname = any(element_names_in)
 			ORDER BY drop_order DESC NULLS LAST
 		LOOP
@@ -117,15 +122,17 @@ WHEN 'disable' THEN
 			,	each_element.conname
 			,	each_element.con_def
 			)
-			ON CONFLICT ON CONSTRAINT unique_element -- if it already exists, set to disabled
-				DO UPDATE SET
-					enabled_date = NULL
+-- 			ON CONFLICT ON CONSTRAINT unique_element -- if it already exists, set to disabled
+-- 				DO UPDATE SET
+-- 					enabled_date = NULL
 			;
 
 		END LOOP;
 	END IF;
 
 	IF 'indexes' = ANY(elements) THEN
+
+	RAISE INFO 'Disabling Indexes...';
 
 		FOR each_element IN
 			SELECT
@@ -175,7 +182,6 @@ WHEN 'disable' THEN
 			;
 
 		END LOOP;
-
 	END IF;
 
 /*
@@ -184,6 +190,8 @@ WHEN 'disable' THEN
 WHEN 'enable' THEN
 
 	IF 'constraints' = ANY(elements) THEN
+
+	RAISE INFO 'Enabling Constraints...';
 
 		FOR each_element IN
 			select * from relation_element_logs
@@ -224,6 +232,8 @@ WHEN 'enable' THEN
 	END IF;
 
 	IF 'indexes' = ANY(elements) THEN
+
+	RAISE INFO 'Enabling Indexes...';
 
 		FOR each_element IN
 			select * from relation_element_logs
@@ -269,6 +279,8 @@ END CASE;
 
 
 IF tables_to_analyze IS NOT NULL THEN
+
+	RAISE INFO 'Analyzing ...';
 
 	tables_to_analyze := (SELECT array_agg(DISTINCT unnest) FROM unnest(tables_to_analyze));
 

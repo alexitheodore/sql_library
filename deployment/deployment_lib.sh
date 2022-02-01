@@ -3,18 +3,18 @@
 # exit on any error
 set -e
 
-cd ../deployment/
-
-
 # defaults:
 username=db_architect
-action="ROLLBACK;"
-rebuild="FALSE"
+refresh="FALSE"
+reset="FALSE"
+upgrade="FALSE"
 port=5432
 
 # Get local defaults (which may override)
+
 source env_variables.sh.local
-source commit_id.git
+source schema/dbv_id
+git_commit_id=`git rev-parse --short HEAD`
 
 ### get inputs ### <<..
 PROGNAME=$0
@@ -23,9 +23,12 @@ PROGNAME=$0
 usage() {
 	cat << EOF >&2
 
-Usage: $PROGNAME -h <host> [-U <username>] [-d <database>] [-p <port>] [-CfrRb]
+Usage: $PROGNAME -h <host> [-U <username>] [-d <database>] [-p <port>] [OPTIONS]
 
 $DESCRIPTION
+
+At baseline (without any arguments), the deployment script runs at "refresh" mode, which only affects non-schema elements (views, procedures,
+permissions, etc.) and runs tests. All other options are additive (unless specified otherwise).
 
 Connection:
 -h <postgres host>: host url or IP (required)
@@ -33,13 +36,13 @@ Connection:
 -d <database name>: connecting database name
 -p <port>: destination port (DEFAULT "$port")
 
-Deployment:
--C : "COMMIT" mode - if omitted, all transactions are rolled back (DEFAULT disabled)
--f : "Force" mode - do not prompt Y/n when comitting (DEFAULT disabled); Implies -C
--r : Reload mode - rebuild tables (DEFAULT disabled)
--R : Reset HARD mode - build entire database from scratch and then reload (DEFAULT disabled); Implies "-xrC"
--v : verbose mode
--x : "unsafe" mode - no transaction control; Implies -C
+OPTIONS (no action take by default):
+-f : do not prompt Y/n to continue
+-r : Refresh mode - refresh all "non-data" objects (Functions, Views, etc.)
+-R : Reset mode - build entire database from scratch and then reload all data; Implies "-r"
+-u : Upgrade mode - Refresh mode + run schema upgrade scripts; Implies "-r"
+-b : verbose info
+-D : debug - shows sql script plan without running it
 
 Local settings taken from 'env_variables.sh.local'
 
@@ -47,10 +50,13 @@ Default and Local Env settings are:
 
 username: $username
 action: $action
-rebuild: $rebuild
+refresh: $refresh
+reset: $reset
+upgrade: $upgrade
 port: $port
 database: $database
 host: $host
+dbv_id: $dbv_id
 
 
 
@@ -58,19 +64,18 @@ EOF
 	exit 1
 }
 
-while getopts 'h:U:d:p:s:CfrbRx?' o; do
+while getopts 'h:U:d:p:s:rRubD?' o; do
 	case $o in
 		(h) host=$OPTARG;;
 		(U) username=$OPTARG;;
 		(d) database=$OPTARG;;
 		(p) port=$OPTARG;;
 		(s) data_source=$OPTARG;;
-		(C) action="COMMIT;";;
-		(f) force="force"; action="COMMIT;";;
-		(r) rebuild="TRUE";;
-		(R) reset="TRUE"; unsafe="TRUE"; rebuild="TRUE"; action="COMMIT;";;
-		(v) verbose="-b -e";;
-		(x) unsafe="TRUE"; action="COMMIT;";;
+		(r) refresh="TRUE";;
+		(R) reset="TRUE"; refresh="TRUE";;
+		(u) upgrade="TRUE"; refresh="TRUE";;
+		(b) verbose="-b -e";;
+		(D) debug="TRUE";;
 		(*) usage #catch any unaccepted parameters
 	esac
 done
@@ -81,78 +86,64 @@ shift "$((OPTIND - 1))"
 ### 
 
 
-echo -e "You are connected to \033[0;31m$host:$database\033[0;39m as $username on port $port."
-
+echo -e "You are connecting to \033[0;31m$host:$database\033[0;39m as $username on port $port."
 
 
 if [[ -z "$host" ]]
-then 
+then
 	echo "Error: The host name must be provided."
 	exit
 fi
 
 if [[ -z "$database" ]]
-then 
+then
 	echo "Error: The database must be provided."
 	exit
 fi
 
-
-mode_alert() {
-	shopt -s nocasematch
-
-	if [[ "$action" = "COMMIT;" ]]
-	then 
-		echo -e "\033[0;31m!!! COMMIT MODE !!!\033[0;39m"
-		if [[ "$force" != "force" ]]
-		then 
-			if [[ "$reset" = "TRUE" ]]
-			then
-				read -p "Are you sure you want to RESET HARD (this will be done in COMMIT mode!)? (Y/n)" -n 1 -r
-			else
-				read -p "Are you sure you want to commit? (Y/n)" -n 1 -r
-			fi
-
-			echo    # (optional) move to a new line
-			if [[ ! $REPLY =~ ^[Yy]$ ]]
-			then
-				echo "Ok, exiting..."
-			    exit 0
-			fi
-		fi
-	else	
-		echo -e "\033[0;33m~~TESTING MODE~~ (no changes will be made)\033[0;39m"
-		action=ROLLBACK
-	fi
-}
+if [[ "$env" = "dev" ]]; then
+  mre_flags="{not-verbose}"
+  is_dev=TRUE
+else
+  mre_flags="{verbose}"
+  is_dev=FALSE
+fi
 
 
 psql_build() {
 
-	psql_exec+="PGOPTIONS='--client-min-messages=warning' "
-	psql_exec+="psql -h $host -U $username -p $port --dbname=$database "
-	psql_exec+="-q $verbose -v ON_ERROR_STOP=ON "
-	psql_exec+="-v rebuild=$rebuild -v git_commit_id=$git_commit_id "
-	
-	if [[ "$unsafe" = "TRUE" ]]
-	then
-		psql_exec+="$* "
-	else
-		psql_exec+="-c \"BEGIN;\" "
-		psql_exec+="$* "
-		psql_exec+="-c \"$action;\" "
-	fi
+  # ! all lines must begin with a space
+	psql_exec+=" PGOPTIONS='--client-min-messages=warning'"
+	psql_exec+=" psql -h $host -U $username -p $port --dbname=postgres"
+	psql_exec+=" -q $verbose -v ON_ERROR_STOP=ON"
+	psql_exec+=" -v reset=$reset -v refresh=$refresh -v upgrade=$upgrade -v mre_flags=$mre_flags -v is_dev=$is_dev -v is_prod=$is_prod"
+	psql_exec+=" -v git_commit_id=$git_commit_id -v dbv_id=$dbv_id"
+	psql_exec+=" -v dwh_host=$dwh_host -v dwh_port=$dwh_port -v dwh_dbname=$dwh_dbname"
+	psql_exec+=" -v apif_prod_host=$apif_prod_host -v apif_prod_port=$apif_prod_port -v apif_prod_dbname=$apif_prod_dbname"
+
+  psql_exec+=" $* "
+
+	if [[ "$debug" = "TRUE" ]]
+  then
+    echo "DEBUG: $psql_exec"
+    exit
+  fi
 
 }
 
 show_success() {
-	if [[ "$action" = "COMMIT;" ]]
-	then 
-		echo -e "\033[0;32mSUCCESS! COMMITTED.\033[0;39m"
-	else	
-		echo -e "\033[0;33mTest Succeeded.\033[0;39m"
-		action=ROLLBACK
-	fi
+  echo -e "\033[0;32mSUCCESS!\033[0;39m"
+  echo "Finished $(date)"
+}
+
+
+get_current_dbv_id () {
 	
-	echo "Finished $(date)"
+	psql_code=(
+		"-t -c \"select max(dbv_id) from deployment_logs;\""
+		)
+
+	psql_build ${psql_code[@]}
+
+	current_dbv_id=$( eval $psql_exec )
 }

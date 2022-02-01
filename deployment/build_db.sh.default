@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+parent_path=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd -P )
+cd "$parent_path"
+
+DESCRIPTION="This script updates, refreshes or resets the api-general database from code."
+
+# Usage: execute from DWH. Pass -? argument for detailed usage.
+
+set -e
+
+# load deployment library
+source /sql_library/deployment/deployment_lib.sh
+
+### now for the main script:
+echo "Started $(date)"
+
+psql_code+=(-f '../schema/build_db.sql')
+
+# compile and execute
+psql_build ${psql_code[@]}
+eval $psql_exec
+
+sleep 1
+
+show_success

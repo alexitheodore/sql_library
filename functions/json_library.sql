@@ -2,18 +2,8 @@
 This is a home-built json extension library. Its something that was started from scratch and needs plenty of work. Some functions are experiments; some are placeholders.
 */
 
-/*
 
-copy symlink via:
-
-$ ln /Volumes/Files/repositories/sql_library/pgs_json_ext/json_library.sql /Volumes/Files/repositories/{path}
-
-*/
-
-\echo Building JSON Library...
-
-
--- some of the sections below require ownership privilages - this establishes whether they can be run or not.
+-- some of the sections below require ownership privileges - this establishes whether they can be run or not.
 select
     rolname = session_user as has_privs
 from pg_type
@@ -758,6 +748,7 @@ CREATE OR REPLACE FUNCTION jsonb_as_numeric(
 AS
 $$
 BEGIN
+-- todo: add error handling if casting cannot be done successfully
     json_out := (json_in->>key_in)::NUMERIC;
 END;
 $$
@@ -788,6 +779,7 @@ CREATE OR REPLACE FUNCTION jsonb_as_int(
 AS
 $$
 BEGIN
+-- todo: add error handling if casting cannot be done successfully
     json_out := (json_in->>key_in)::INT;
 END;
 $$
@@ -945,6 +937,30 @@ CREATE OPERATOR ->@ (
 )
 ;
 COMMENT ON OPERATOR ->@ (JSONB, TEXT) IS 'This is a shorthand operator that returns the date from the left object per the key given by right operator.';
+
+CREATE OR REPLACE FUNCTION jsonb_as_text(
+    IN  json_in     JSONB
+,   OUT json_out    TEXT
+)
+AS
+$$
+BEGIN
+    json_out := (json_in->>0)::text;
+END;
+$$
+LANGUAGE PLPGSQL
+IMMUTABLE
+;
+COMMENT ON FUNCTION jsonb_as_date(JSONB, TEXT) IS 'This is a shorthand operator that gets the text value from a string object. This function is intended to be used by custom operator(s).';
+
+
+DROP OPERATOR IF EXISTS ->> (jsonb, none);
+CREATE OPERATOR ->> (
+    PROCEDURE = jsonb_as_text,
+    LEFTARG = jsonb
+)
+;
+COMMENT ON OPERATOR ->> (JSONB, none) IS 'This is a shorthand operator that returns the TEXT data type from the left string object.';
 
 /*
 */
