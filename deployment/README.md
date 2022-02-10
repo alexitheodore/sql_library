@@ -33,6 +33,8 @@ Connection settings such as the destination database host, port, username, etc. 
 
 `env_variables.sh.local`
 
+It can be copied from the default template `env_variables.sh.default`
+
 However, these parameters can also be over-ridden from the CLI - see the help screen.
 
 
