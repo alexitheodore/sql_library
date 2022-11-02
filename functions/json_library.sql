@@ -2,10 +2,19 @@
 This is a home-built json extension library. Its something that was started from scratch and needs plenty of work. Some functions are experiments; some are placeholders.
 */
 
+/*
 
--- some of the sections below require ownership privileges - this establishes whether they can be run or not.
-select
-    rolname = session_user as has_privs
+copy symlink via:
+
+$ ln /Volumes/Files/repositories/sql_library/pgs_json_ext/json_library.sql /Volumes/Files/repositories/{path}
+
+*/
+
+\echo '	---- Building JSON Library'
+
+-- some of the sections below require either superuser or ownership privileges - this establishes whether they can be run or not.
+SELECT
+    greatest(rolsuper, rolname = session_user) as has_privs
 from pg_type
 join pg_roles on pg_roles.oid = typowner
 where typname = 'json'
@@ -53,13 +62,13 @@ CASE jsonb_typeof(json_base)::text
         return;
     WHEN 'object' THEN
         IF jsonb_typeof(json_wedge) = 'array'
-            THEN RAISE EXCEPTION 'Cannot append object and array types';
+            THEN RAISE EXCEPTION '(eid:bRy8S) Cannot append object and array types';
             RETURN;
         END IF;
         json_out := (left(json_base::text,-1)+comma+right(json_wedge::text,-1))::jsonb
         return;
     ELSE
-        RAISE EXCEPTION 'Unusual case "%" not found.', jsonb_typeof(json_base)::text;
+        RAISE EXCEPTION '(eid:GLHQT) Unusual case "%" not found.', jsonb_typeof(json_base)::text;
         RETURN;
 END CASE;
 
@@ -351,22 +360,32 @@ CREATE OR REPLACE FUNCTION jsonb_delta(
 $$
 BEGIN
 
-with
+-- IF json_left IS NULL OR json_right IS NULL THEN
+-- 	RAISE EXCEPTION 'Non-null inputs required';
+-- END IF
+-- ;
+
+WITH
     base as
 (
-select
+SELECT
     key
-,   case when a.value != b.value then ('left'+>a.value)&('right'+>b.value) ELSE NULL END as changes
-from jsonb_each(json_left) a
-join jsonb_each(json_right) b using (key)
+,   CASE
+		WHEN a.value IS DISTINCT FROM b.value THEN jsonb_build_object('left', a.value, 'right', b.value)
+		ELSE NULL
+	END as changes
+FROM jsonb_each_text(json_left) a
+FULL OUTER JOIN jsonb_each_text(json_right) b using (key)
 )
-select
-    json_agg(key+>changes)
-into json_out
-from base
-where
+SELECT
+    jsonb_object_agg(key,changes)
+INTO json_out
+FROM base
+WHERE
     changes IS NOT NULL
 ;
+
+json_out := coalesce(json_out, '{}');
 
 END;
 $$
@@ -427,7 +446,7 @@ BEGIN
 
 
 IF NOT json_in ?& keys THEN
-	RAISE EXCEPTION 'Insufficient arguments, missing parameters: %'
+	RAISE EXCEPTION '(eid:BqOQt) Insufficient arguments, missing parameters: %'
 	,	(
 		select
 			string_agg(required_keys, ', ')
@@ -937,30 +956,6 @@ CREATE OPERATOR ->@ (
 )
 ;
 COMMENT ON OPERATOR ->@ (JSONB, TEXT) IS 'This is a shorthand operator that returns the date from the left object per the key given by right operator.';
-
-CREATE OR REPLACE FUNCTION jsonb_as_text(
-    IN  json_in     JSONB
-,   OUT json_out    TEXT
-)
-AS
-$$
-BEGIN
-    json_out := (json_in->>0)::text;
-END;
-$$
-LANGUAGE PLPGSQL
-IMMUTABLE
-;
-COMMENT ON FUNCTION jsonb_as_date(JSONB, TEXT) IS 'This is a shorthand operator that gets the text value from a string object. This function is intended to be used by custom operator(s).';
-
-
-DROP OPERATOR IF EXISTS ->> (jsonb, none);
-CREATE OPERATOR ->> (
-    PROCEDURE = jsonb_as_text,
-    LEFTARG = jsonb
-)
-;
-COMMENT ON OPERATOR ->> (JSONB, none) IS 'This is a shorthand operator that returns the TEXT data type from the left string object.';
 
 /*
 */

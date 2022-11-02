@@ -10,7 +10,7 @@ $ ln /Volumes/Files/repositories/sql_library/pgs_json_ext/json_library.sql /Volu
 
 */
 
-\echo Building JSON Library...
+\echo '	---- Building JSON Library...'
 
 
 -- some of the sections below require ownership privilages - this establishes whether they can be run or not.
@@ -63,13 +63,13 @@ CASE jsonb_typeof(json_base)::text
         return;
     WHEN 'object' THEN
         IF jsonb_typeof(json_wedge) = 'array'
-            THEN RAISE EXCEPTION 'Cannot append object and array types';
+            THEN RAISE EXCEPTION '(eid:KSil8) Cannot append object and array types';
             RETURN;
         END IF;
         json_out := (left(json_base::text,-1)+comma+right(json_wedge::text,-1))::jsonb
         return;
     ELSE
-        RAISE EXCEPTION 'Unusual case "%" not found.', jsonb_typeof(json_base)::text;
+        RAISE EXCEPTION '(eid:bNvo8) Unusual case "%" not found.', jsonb_typeof(json_base)::text;
         RETURN;
 END CASE;
 
@@ -437,7 +437,7 @@ BEGIN
 
 
 IF NOT json_in ?& keys THEN
-	RAISE EXCEPTION 'Insufficient arguments, missing parameters: %'
+	RAISE EXCEPTION '(eid:I48EN) Insufficient arguments, missing parameters: %'
 	,	(
 		select
 			string_agg(required_keys, ', ')

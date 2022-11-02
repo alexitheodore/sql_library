@@ -6,7 +6,7 @@ CREATE OR REPLACE FUNCTION date_diff
 ) RETURNS INT AS
 $$
 DECLARE
-	time_fraction INT;
+	time_fraction FLOAT;
 BEGIN
 
 IF pg_typeof(start) NOT IN (
@@ -14,12 +14,13 @@ IF pg_typeof(start) NOT IN (
 	,	'timestamp without time zone'
 	,	'date'
 	)
-	THEN RAISE EXCEPTION 'Unaccepted input data type';
+	THEN RAISE EXCEPTION '(eid:vDRms) Unaccepted input data type';
 END IF
 ;
 
 time_fraction :=
 	CASE format
+		WHEN 'microsecond' THEN 1/1000.0
 		WHEN 'second' THEN 1
 		WHEN 'minute' THEN 60
 		WHEN 'hour' THEN 60*60
@@ -31,7 +32,7 @@ time_fraction :=
 ;
 
 IF time_fraction IS NULL THEN
-	RAISE EXCEPTION 'Invalid reporting format';
+	RAISE EXCEPTION '(eid:a3T66) Invalid reporting format';
 END IF;
 
 RETURN EXTRACT(epoch FROM age(finish,start))/time_fraction;

@@ -5,6 +5,12 @@ CREATE OR REPLACE FUNCTION time_trail(
 $$
 BEGIN
 
+/*
+When yet-unset, the timer will be started. Each subsequent call returns the time since the last call.
+
+*/
+
+
 IF current_setting('time_trail.current_time', TRUE) <> '' AND is_active THEN
 
 	microseconds :=

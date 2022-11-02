@@ -32,7 +32,7 @@ CASE upper(order_in)
 			from unnest(array_in)
 			;
 	ELSE
-		RAISE EXCEPTION 'second argument must be either ASC or DESC';
+		RAISE EXCEPTION '(eid:otsBQ) second argument must be either ASC or DESC';
 END CASE
 ;
 

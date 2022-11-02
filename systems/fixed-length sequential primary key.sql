@@ -29,7 +29,7 @@ LOOP
 	loop_count := loop_count + 1;
 
 	IF loop_count > 100 THEN
-		RAISE EXCEPTION 'Too many loops. Might be reaching the practical limit for the given length.';
+		RAISE EXCEPTION '(eid:oGqZg) Too many loops. Might be reaching the practical limit for the given length.';
 	END IF;
 END LOOP;
 
@@ -70,7 +70,7 @@ BEGIN
 
 EXCEPTION
 	WHEN OTHERS THEN
-	RAISE EXCEPTION 'exited on loop %', loop_count;
+	RAISE EXCEPTION '(eid:KSNcC) exited on loop %', loop_count;
 
 END;
 

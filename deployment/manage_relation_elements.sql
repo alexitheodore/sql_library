@@ -1,4 +1,4 @@
-\include_relative ../../functions/date_diff.sql
+\include_relative ../functions/date_diff.sql
 
 CREATE OR REPLACE PROCEDURE manage_relation_elements(
 	IN mode TEXT
@@ -30,7 +30,7 @@ For `element_names_in`, simply supply the list of element_names (constraint name
 IF	coalesce(schema_table_list, element_names_in) IS NULL
 	OR	(schema_table_list IS NOT NULL AND element_names_in IS NOT NULL)
 	THEN
-		RAISE EXCEPTION 'Must provide either `schema_table_list` or `schema_table_list` but not both.';
+		RAISE EXCEPTION '(eid:WBo59) Must provide either `schema_table_list` or `schema_table_list` but not both.';
 END IF;
 
 
@@ -39,6 +39,7 @@ TODO:
 [√] always retain element records, simply mark as enabled or disabled
 [√] when an existing element exists in record, just update it, don't duplicate it
 [√] whenever enabling an index, analyze each table
+[ ] add feature for disabling/enabling triggers
 
 
 
@@ -49,8 +50,14 @@ CASE mode
 
 WHEN 'disable' THEN
 
+	/*
+	This table stores all the relation "elements" (indexes, constraints, triggers) and the SQL that is used to create
+	them. The first step of the process will always have to be disabling an element, in which case that element is
+	removed and the code needed to restore it is inserted into this table. When (re)enabled then the `create_def` SQL
+	code is used and the `enabled_date` is filled in.
+	*/
 	-- the table may actually exist already and more stuff can be added to it.
-	CREATE TABLE IF NOT EXISTS admin.relation_element_logs
+	CREATE TABLE IF NOT EXISTS relation_element_logs
 	(
 		id
 			SERIAL
@@ -72,8 +79,6 @@ WHEN 'disable' THEN
 
 	IF 'constraints' = ANY(elements) THEN
 
-	RAISE INFO 'Disabling Constraints...';
-
 		FOR each_element IN
 			select
 				pg_get_constraintdef(cnt.oid) as con_def
@@ -88,10 +93,7 @@ WHEN 'disable' THEN
 			from pg_constraint cnt
 			JOIN pg_class cls ON cls.oid = conrelid
 			WHERE
-				(
-					(cls.relnamespace::regnamespace::text)||'.'||(relname) LIKE ANY(schema_table_list) -- schema.table
-				AND relname NOT IN ('relation_element_logs') -- obviously need to skip this one...
-				)
+				(cls.relnamespace::regnamespace::text)||'.'||(relname) LIKE ANY(schema_table_list) -- schema.table
 			OR conname = any(element_names_in)
 			ORDER BY drop_order DESC NULLS LAST
 		LOOP
@@ -122,17 +124,15 @@ WHEN 'disable' THEN
 			,	each_element.conname
 			,	each_element.con_def
 			)
--- 			ON CONFLICT ON CONSTRAINT unique_element -- if it already exists, set to disabled
--- 				DO UPDATE SET
--- 					enabled_date = NULL
+			ON CONFLICT ON CONSTRAINT unique_element -- if it already exists, set to disabled
+				DO UPDATE SET
+					enabled_date = NULL
 			;
 
 		END LOOP;
 	END IF;
 
 	IF 'indexes' = ANY(elements) THEN
-
-	RAISE INFO 'Disabling Indexes...';
 
 		FOR each_element IN
 			SELECT
@@ -151,7 +151,7 @@ WHEN 'disable' THEN
 				AND indislive
 				AND (pgc2.relnamespace::regnamespace::text)||'.'||(pgc1.relname) LIKE ANY(schema_table_list) -- schema.table
 				)
-			OR pgc2.relname = any(element_names_in)
+			OR pgc2.relname = any(element_names_in) -- despite the look of it, pgc2.relname is the index (not table) name
 		LOOP
 			IF 'verbose' = any(flags) THEN
 				RAISE INFO 'Disabling Index: %.%', each_element.table_name, each_element.index_name;
@@ -182,6 +182,63 @@ WHEN 'disable' THEN
 			;
 
 		END LOOP;
+
+	END IF;
+
+	IF 'triggers' = ANY(elements) THEN
+
+		FOR each_element IN
+			(
+			SELECT
+				tgname
+			,	(relnamespace::regnamespace::text) as schema_name
+			,	relname as table_name
+			FROM pg_trigger
+			JOIN pg_class pc on pg_trigger.tgrelid = pc.oid
+			WHERE
+				NOT tgisinternal
+			AND (
+				concat((relnamespace::regnamespace::text), '.', relname) LIKE ANY(schema_table_list)
+				OR tgname = any(element_names_in)
+				)
+			)
+		LOOP
+			IF 'verbose' = any(flags) THEN
+				RAISE INFO 'Disabling Trigger: %.%', each_element.schema_name, each_element.tgname;
+			END IF;
+
+			EXECUTE format(
+					'ALTER TABLE %1$s.%2$s DISABLE TRIGGER %3$s;'
+				,	quote_ident(each_element.schema_name)
+				,	quote_ident(each_element.table_name)
+				,	quote_ident(each_element.tgname)
+				)
+			;
+
+			INSERT INTO relation_element_logs (
+				element_type
+			,	table_name
+			,	element_name
+			,	create_def
+			)
+			VALUES
+			(	'trigger'
+			,	concat(each_element.schema_name, '.', each_element.table_name)
+			,	each_element.tgname
+			,	format(
+					'ALTER TABLE %1$s.%2$s ENABLE TRIGGER %3$s;'
+				,	quote_ident(each_element.schema_name)
+				,	quote_ident(each_element.table_name)
+				,	quote_ident(each_element.tgname)
+				)
+			)
+			ON CONFLICT ON CONSTRAINT unique_element -- if it already exists, set to disabled
+				DO UPDATE SET
+					enabled_date = NULL
+			;
+
+		END LOOP;
+
 	END IF;
 
 /*
@@ -190,8 +247,6 @@ WHEN 'disable' THEN
 WHEN 'enable' THEN
 
 	IF 'constraints' = ANY(elements) THEN
-
-	RAISE INFO 'Enabling Constraints...';
 
 		FOR each_element IN
 			select * from relation_element_logs
@@ -203,13 +258,16 @@ WHEN 'enable' THEN
 			ORDER BY id DESC
 		LOOP
 			IF 'verbose' = any(flags) THEN
-				RAISE INFO 'Enabling Constraint: %.%', each_element.table_name, each_element.element_name;
+				RAISE INFO 'Enabling Constraint: %.%'
+					,	each_element.table_name
+					,	each_element.element_name
+				;
 			END IF;
 
 			BEGIN
 				exec_time := clock_timestamp();
 
-				EXECUTE format('ALTER TABLE %1$s ADD %2$s;', each_element.table_name, each_element.create_def);
+				EXECUTE format('ALTER TABLE %1$s ADD CONSTRAINT %2$s %3$s;', each_element.table_name, each_element.element_name, each_element.create_def);
 
 				IF 'verbose' = any(flags) THEN
 					RAISE INFO 'Time: %s', date_diff(exec_time, clock_timestamp(), 'second');
@@ -225,15 +283,13 @@ WHEN 'enable' THEN
 
 			EXCEPTION WHEN others THEN
 				GET STACKED DIAGNOSTICS error_detail = PG_EXCEPTION_DETAIL;
-				RAISE INFO '!! Skipping because of error %. %', SQLERRM, error_detail;
+				RAISE INFO ' ❗️❗️ Skipping because of error %. %', SQLERRM, error_detail;
 			END;
 		END LOOP;
 
 	END IF;
 
 	IF 'indexes' = ANY(elements) THEN
-
-	RAISE INFO 'Enabling Indexes...';
 
 		FOR each_element IN
 			select * from relation_element_logs
@@ -245,7 +301,11 @@ WHEN 'enable' THEN
 			ORDER BY id DESC
 		LOOP
 			IF 'verbose' = any(flags) THEN
-				RAISE INFO 'Enabling Index: %.%', each_element.table_name, each_element.element_name;
+				RAISE INFO '(%) Enabling Index: %.%'
+					,	current_timestamp
+					,	each_element.table_name
+					,	each_element.element_name
+				;
 			END IF;
 
 			BEGIN
@@ -268,7 +328,50 @@ WHEN 'enable' THEN
 
 			EXCEPTION WHEN others THEN
 				GET STACKED DIAGNOSTICS error_detail = PG_EXCEPTION_DETAIL;
-				RAISE INFO '!! Skipping constraint because of error %. %', SQLERRM, error_detail;
+				RAISE INFO ' ❗️❗️ Skipping constraint because of error %. %', SQLERRM, error_detail;
+			END;
+		END LOOP;
+
+
+	END IF;
+
+	IF 'triggers' = ANY(elements) THEN
+
+		FOR each_element IN
+			select * from relation_element_logs
+			WHERE
+				element_type = 'trigger'
+			AND CASE WHEN schema_table_list IS NULL THEN TRUE ELSE table_name LIKE ANY(schema_table_list) END -- schema.table
+			AND coalesce(element_name = any(element_names_in), TRUE)
+			AND enabled_date IS NULL
+			ORDER BY id DESC
+		LOOP
+			IF 'verbose' = any(flags) THEN
+				RAISE INFO 'Enabling Trigger: %.%', each_element.table_name, each_element.element_name;
+			END IF;
+
+			BEGIN
+				exec_time := clock_timestamp();
+
+				EXECUTE each_element.create_def;
+
+				IF 'verbose' = any(flags) THEN
+					RAISE INFO 'Time: %s', date_diff(exec_time, clock_timestamp(), 'second');
+				END IF;
+
+				UPDATE relation_element_logs SET
+					enabled_date = now()
+				WHERE id = each_element.id
+				;
+
+				-- add to the list of tables that need to be analyzed at the end
+				-- tables_to_analyze := array_append(tables_to_analyze, each_element.table_name);
+					-- Triggers do not need to be ANALYZE'd
+
+
+			EXCEPTION WHEN others THEN
+				GET STACKED DIAGNOSTICS error_detail = PG_EXCEPTION_DETAIL;
+				RAISE INFO ' ❗️❗️ Skipping constraint because of error %. %', SQLERRM, error_detail;
 			END;
 		END LOOP;
 
@@ -279,8 +382,6 @@ END CASE;
 
 
 IF tables_to_analyze IS NOT NULL THEN
-
-	RAISE INFO 'Analyzing ...';
 
 	tables_to_analyze := (SELECT array_agg(DISTINCT unnest) FROM unnest(tables_to_analyze));
 
@@ -295,7 +396,7 @@ IF tables_to_analyze IS NOT NULL THEN
 
 		EXCEPTION WHEN others THEN
 			GET STACKED DIAGNOSTICS error_detail = PG_EXCEPTION_DETAIL;
-			RAISE INFO '!! Skipping constraint because of error %. %', SQLERRM, error_detail;
+			RAISE INFO ' ❗️❗️ Skipping constraint because of error %. %', SQLERRM, error_detail;
 		END;
 	END LOOP;
 

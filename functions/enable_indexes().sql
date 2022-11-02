@@ -36,7 +36,7 @@ skip_essentials:
 
 
 IF array_replace(ARRAY[schema_name, table_name, index_name], NULL, '') <@ ARRAY[''] THEN
-	RAISE EXCEPTION 'Error: Must specify at least one of schema_name | table_name | index_name';
+	RAISE EXCEPTION '(eid:jKYZg) Error: Must specify at least one of schema_name | table_name | index_name';
 END IF;
 
 IF enable_updates IS FALSE THEN

@@ -58,7 +58,7 @@ FOR obj IN SELECT * FROM pg_event_trigger_dropped_objects()
 LOOP
 
 	IF obj.object_type = 'schema' and obj.object_name = 'testst' THEN
-		RAISE EXCEPTION 'Stop! Are you sure you want to do this? Disable this block with "ALTER EVENT TRIGGER lock_schema DISABLE;" to break everything.';
+		RAISE EXCEPTION '(eid:RfnIr) Stop! Are you sure you want to do this? Disable this block with "ALTER EVENT TRIGGER lock_schema DISABLE;" to break everything.';
 	END IF;
 
 END LOOP;
